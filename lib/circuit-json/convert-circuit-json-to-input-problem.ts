@@ -7,6 +7,8 @@ import type {
   PcbPort,
   PcbSmtPad,
   PcbTrace,
+  PcbVia,
+  Point,
   SourceNet,
   SourcePort,
   SourceTrace,
@@ -38,6 +40,9 @@ export const convertCircuitJsonToInputProblem = (
   const source_traces = circuitJson.filter(
     (e) => e.type === "source_trace",
   ) as SourceTrace[]
+  const pcb_traces = circuitJson.filter(
+    (e) => e.type === "pcb_trace",
+  ) as PcbTrace[]
   const source_nets = circuitJson.filter(
     (e) => e.type === "source_net",
   ) as SourceNet[]
@@ -86,6 +91,21 @@ export const convertCircuitJsonToInputProblem = (
     ...sourceTraceIdToConnectivityKey,
     ...sourceNetIdToConnectivityKey,
   }
+
+  const pcbTraceIdToConnectivityKey: Record<string, string> =
+    Object.fromEntries(
+      pcb_traces
+        .map(
+          (trace) =>
+            [
+              trace.pcb_trace_id,
+              trace.source_trace_id
+                ? idToConnectivityKey[trace.source_trace_id]
+                : undefined,
+            ] as const,
+        )
+        .filter((entry): entry is [string, string] => Boolean(entry[1])),
+    )
 
   const pads: InputPad[] = []
 
@@ -160,27 +180,64 @@ export const convertCircuitJsonToInputProblem = (
         y: hole.y,
         radius: hole.hole_diameter / 2,
       } as InputCircularPad)
+    } else if (elm.type === "pcb_via") {
+      const via = elm as PcbVia
+      if (!via.layers.includes(options.layer)) continue
+
+      let connectivityKey: string | undefined
+      if (via.pcb_trace_id) {
+        connectivityKey = pcbTraceIdToConnectivityKey[via.pcb_trace_id]
+      }
+
+      if (!connectivityKey) {
+        connectivityKey = `unconnected-via:${via.pcb_via_id}`
+      }
+
+      pads.push({
+        shape: "circle",
+        padId: via.pcb_via_id,
+        layer: options.layer,
+        connectivityKey,
+        x: via.x,
+        y: via.y,
+        radius: via.outer_diameter / 2,
+      } as InputCircularPad)
     } else if (elm.type === "pcb_trace") {
       const trace = elm as PcbTrace
-      const first_wire = trace.route.find(
-        (r: any) => r.route_type === "wire" && r.layer,
-      )
-      if (!first_wire) continue
-      if (first_wire.route_type === "via") continue
-      if (first_wire.layer !== options.layer) continue
-
       if (!trace.source_trace_id) continue
       const connectivityKey = idToConnectivityKey[trace.source_trace_id]
       if (!connectivityKey) continue
 
-      pads.push({
-        shape: "trace",
-        padId: trace.pcb_trace_id,
-        layer: first_wire.layer!,
-        connectivityKey,
-        segments: trace.route.map((r: any) => ({ x: r.x, y: r.y })),
-        width: first_wire.width,
-      } as InputTracePad)
+      let currentSegmentGroup: Point[] = []
+      let currentWidth: number | null = null
+
+      const commitGroup = () => {
+        if (currentSegmentGroup.length > 1) {
+          pads.push({
+            shape: "trace",
+            padId: `${trace.pcb_trace_id}-${pads.length}`,
+            layer: options.layer,
+            connectivityKey,
+            segments: currentSegmentGroup,
+            width: currentWidth!,
+          } as InputTracePad)
+        }
+        currentSegmentGroup = []
+        currentWidth = null
+      }
+
+      for (const r of trace.route) {
+        const ri = r as any
+        const isWireOnLayer =
+          ri.route_type === "wire" && ri.layer === options.layer
+        if (isWireOnLayer) {
+          if (currentWidth === null) currentWidth = ri.width
+          currentSegmentGroup.push({ x: ri.x, y: ri.y })
+        } else {
+          commitGroup()
+        }
+      }
+      commitGroup()
     }
   }
 
