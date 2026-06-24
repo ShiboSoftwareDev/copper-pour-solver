@@ -1,6 +1,6 @@
 import type { AnyCircuitElement } from "circuit-json"
 import type { getFullConnectivityMapFromCircuitJson } from "circuit-json-to-connectivity-map"
-import { getElementId } from "./getElementId"
+import { getElementId } from "@tscircuit/circuit-json-util"
 import { getElementSubcircuitConnectivityKey } from "./getElementSubcircuitConnectivityKey"
 
 export const buildSubcircuitConnectivityLookup = (

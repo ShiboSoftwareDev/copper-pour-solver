@@ -13,6 +13,7 @@
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
+    "@tscircuit/circuit-json-util": "^0.0.77",
     "@flatten-js/core": "^1.6.2",
     "@tscircuit/math-utils": "^0.0.25",
     "@tscircuit/solver-utils": "^0.0.14",
